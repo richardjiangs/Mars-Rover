@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARES 火星车控制台</title>
+<style>
+  /* ---- 色板角色（dataviz 参考色板，深色面） ---- */
+  .viz-root {
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --text-primary:#ffffff;
+    --text-secondary:#c3c2b7;
+    --muted:       #898781;
+    --grid:        #2c2c2a;
+    --baseline:    #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;   /* 前向距离 */
+    --series-2:    #199e70;   /* 左前距离 */
+    --series-3:    #c98500;   /* 右前距离 */
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface-1);
+  }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 600; }
+  input[type=text] {
+    background: var(--page); color: var(--text-primary);
+    border: 1px solid var(--baseline); border-radius: 6px; padding: 6px 8px; width: 150px;
+  }
+  button {
+    background: var(--surface-1); color: var(--text-primary);
+    border: 1px solid var(--baseline); border-radius: 8px;
+    padding: 7px 14px; cursor: pointer; font-size: 14px;
+  }
+  button:hover { border-color: var(--muted); }
+  button.active { border-color: var(--series-1); color: var(--series-1); }
+  #connState { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+  #connState .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--status-critical); }
+  #connState.ok .dot { background: var(--status-good); }
+
+  main { display: grid; grid-template-columns: minmax(320px, 1.2fr) minmax(340px, 1fr); gap: 12px; padding: 12px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px;
+  }
+  section h2 { font-size: 13px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+
+  /* 视频 */
+  #video { width: 100%; aspect-ratio: 4/3; background: var(--page); border-radius: 8px;
+           display: block; object-fit: contain; border: 1px solid var(--grid); }
+  #videoHint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  /* 状态瓦片 */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .tile { background: var(--page); border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px; }
+  .tile .k { font-size: 11px; color: var(--muted); }
+  .tile .v { font-size: 20px; margin-top: 2px; }
+  .tile .u { font-size: 11px; color: var(--text-secondary); margin-left: 2px; }
+
+  /* 距离条（3 路超声波） */
+  .meter { display: grid; grid-template-columns: 44px 1fr 58px; gap: 8px; align-items: center; margin: 6px 0; }
+  .meter .lbl { color: var(--text-secondary); font-size: 12px; }
+  .meter .bar { height: 10px; background: var(--page); border: 1px solid var(--grid); border-radius: 5px; overflow: hidden; }
+  .meter .fill { height: 100%; width: 0%; border-radius: 4px; }
+  .meter .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 12px; }
+  #mF .fill { background: var(--series-1); } #mL .fill { background: var(--series-2); } #mR .fill { background: var(--series-3); }
+
+  /* 状态徽章：图标 + 文字，不只靠颜色 */
+  .badge { display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px;
+           border-radius: 999px; border: 1px solid var(--baseline); font-size: 13px; }
+  .badge.good     { color: var(--status-good); }
+  .badge.warning  { color: var(--status-warning); }
+  .badge.serious  { color: var(--status-serious); }
+  .badge.critical { color: var(--status-critical); }
+
+  /* 控制区 */
+  .modeRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  #estopBtn {
+    width: 100%; padding: 14px; font-size: 17px; font-weight: 700; border-radius: 10px;
+    background: var(--status-critical); border: none; color: #fff; margin: 6px 0 10px;
+  }
+  #estopBtn.latched { background: var(--page); color: var(--status-critical);
+                      border: 2px solid var(--status-critical); }
+  .driveWrap { display: flex; gap: 14px; align-items: center; }
+  #pad {
+    width: 150px; height: 150px; border-radius: 50%; flex: none;
+    background: var(--page); border: 1px solid var(--baseline); position: relative; touch-action: none;
+  }
+  #knob { width: 44px; height: 44px; border-radius: 50%; background: var(--series-1);
+          position: absolute; left: 53px; top: 53px; }
+  .driveInfo { color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
+  .taskRow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  input[type=range] { width: 160px; vertical-align: middle; }
+
+  /* 日志 */
+  #log { height: 150px; overflow-y: auto; font-family: ui-monospace, Consolas, monospace;
+         font-size: 12px; color: var(--text-secondary); background: var(--page);
+         border: 1px solid var(--grid); border-radius: 8px; padding: 8px; white-space: pre-wrap; }
+  .lg-ERROR { color: var(--status-critical); } .lg-WARN { color: var(--status-warning); }
+</style>
+</head>
+<body class="viz-root">
+
+<header>
+  <h1>🛰 ARES 控制台</h1>
+  <label>车辆地址 <input type="text" id="roverHost" value="127.0.0.1" title="Commander 串口打印的 IP"></label>
+  <label>相机地址 <input type="text" id="camHost" placeholder="ESP32-CAM 的 IP（可空）"></label>
+  <button id="connectBtn">连接</button>
+  <span id="connState"><span class="dot"></span><span id="connText">未连接</span></span>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>相机画面（MJPEG）</h2>
+      <img id="video" alt="填写相机地址后显示实时画面">
+      <div id="videoHint">填上方"相机地址"后自动加载 http://&lt;相机IP&gt;/stream</div>
+    </section>
+    <section style="margin-top:12px">
+      <h2>告警与事件</h2>
+      <div id="log"></div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>遥测</h2>
+      <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap">
+        <span class="badge" id="modeBadge">◇ 模式 —</span>
+        <span class="badge" id="thermalBadge">🌡 热控 —</span>
+        <span class="badge" id="camBadge">📷 相机 —</span>
+      </div>
+      <div class="tiles">
+        <div class="tile"><div class="k">电池电压</div><div class="v" id="tBat">—<span class="u">V</span></div></div>
+        <div class="tile"><div class="k">航向 yaw</div><div class="v" id="tYaw">—<span class="u">°</span></div></div>
+        <div class="tile"><div class="k">舱内温度</div><div class="v" id="tTemp">—<span class="u">℃</span></div></div>
+        <div class="tile"><div class="k">唤醒次数</div><div class="v" id="tWake">—</div></div>
+        <div class="tile"><div class="k">光照</div><div class="v" id="tLight">—</div></div>
+        <div class="tile"><div class="k">任务进度</div><div class="v" id="tTask">—</div></div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="meter" id="mF"><span class="lbl">前　F</span><div class="bar"><div class="fill"></div></div><span class="val">— cm</span></div>
+        <div class="meter" id="mL"><span class="lbl">左前L</span><div class="bar"><div class="fill"></div></div><span class="val">— cm</span></div>
+        <div class="meter" id="mR"><span class="lbl">右前R</span><div class="bar"><div class="fill"></div></div><span class="val">— cm</span></div>
+      </div>
+    </section>
+
+    <section style="margin-top:12px">
+      <h2>控制</h2>
+      <div class="modeRow">
+        <button data-mode="AUTO">🤖 自动驾驶</button>
+        <button data-mode="TELEOP-PC">🎮 手动接管</button>
+        <button data-mode="IDLE">⏸ 待命</button>
+        <button id="sleepBtn">🌙 休眠演示</button>
+      </div>
+      <button id="estopBtn">🛑 紧急停车 E-STOP</button>
+      <div class="driveWrap">
+        <div id="pad"><div id="knob"></div></div>
+        <div class="driveInfo">
+          虚拟摇杆或键盘 <b>W A S D</b> 驾驶<br>
+          （需先点"手动接管"或直接推杆）<br>
+          空格 = E-STOP<br>
+          油门 <span id="dT">0.00</span> · 转向 <span id="dU">0.00</span>
+        </div>
+      </div>
+      <div class="taskRow">
+        <button id="panoBtn">📸 拍 360° 全景</button>
+        <button id="stereoBtn">🫧 拍伪 3D（两张）</button>
+        <button id="taskStopBtn">✋ 停止任务</button>
+      </div>
+      <div style="margin-top:10px; color:var(--text-secondary)">
+        云台 <input type="range" id="panSlider" min="0" max="180" value="90">
+        <span id="panVal">90</span>°
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+// ================= 连接管理 =================
+let ws = null, connected = false;
+const $ = id => document.getElementById(id);
+
+function log(text, level) {
+  const el = $("log");
+  const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  const line = document.createElement("div");
+  if (level) line.className = "lg-" + level;
+  line.textContent = `[${ts}] ${text}`;
+  el.appendChild(line);
+  while (el.childNodes.length > 200) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setConn(ok, text) {
+  connected = ok;
+  $("connState").classList.toggle("ok", ok);
+  $("connText").textContent = text;
+}
+
+function connect() {
+  const host = $("roverHost").value.trim();
+  if (!host) return;
+  if (ws) { ws.onclose = null; ws.close(); }
+  const url = `ws://${host}:81/`;
+  setConn(false, "连接中…");
+  ws = new WebSocket(url);
+  ws.onopen = () => { setConn(true, host); log("已连接 " + url); };
+  ws.onclose = () => { setConn(false, "已断开"); log("连接断开，3 秒后重试", "WARN");
+                       setTimeout(() => { if (!connected) connect(); }, 3000); };
+  ws.onerror = () => {};
+  ws.onmessage = ev => { try { handleMsg(JSON.parse(ev.data)); } catch (e) {} };
+
+  const cam = $("camHost").value.trim();
+  if (cam) { $("video").src = `http://${cam}/stream`; }
+}
+$("connectBtn").onclick = connect;
+
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+// ================= 遥测渲染 =================
+const THERMAL_BADGE = {            // 状态色 + 文字（不只靠颜色）
+  "NORMAL": ["good", "正常"], "COLD_START": ["warning", "低温启动"],
+  "COLD_SLEEP": ["serious", "低温休眠"], "HOT_LIMIT": ["warning", "高温限速"],
+  "THERMAL_PAUSE": ["critical", "过热暂停"], "N/A": ["", "未接传感器"]
+};
+function setBadge(id, icon, label, cls) {
+  const b = $(id);
+  b.className = "badge" + (cls ? " " + cls : "");
+  b.textContent = `${icon} ${label}`;
+}
+function meter(id, cm) {
+  const m = $(id);
+  m.querySelector(".val").textContent = (cm >= 0 ? cm : "—") + " cm";
+  m.querySelector(".fill").style.width = (cm >= 0 ? Math.min(cm, 150) / 1.5 : 0) + "%";
+}
+
+function handleMsg(m) {
+  if (m.type === "telemetry") {
+    setBadge("modeBadge", m.mode === "E-STOP" ? "🛑" : m.mode === "AUTO" ? "🤖" : "◇",
+             "模式 " + m.mode, m.mode === "E-STOP" ? "critical" : m.mode === "AUTO" ? "good" : "");
+    const th = THERMAL_BADGE[m.thermal] || ["", m.thermal];
+    setBadge("thermalBadge", "🌡", "热控 " + th[1], th[0]);
+    setBadge("camBadge", "📷", "相机 " + m.cam,
+             m.cam === "READY" ? "good" : m.cam === "ERR" ? "critical" : "");
+    $("tBat").innerHTML = (m.battery_v > 0 ? m.battery_v.toFixed(2) : "—") + '<span class="u">V</span>';
+    $("tYaw").innerHTML = (m.yaw ?? 0).toFixed(1) + '<span class="u">°</span>';
+    $("tTemp").innerHTML = (m.inside_temp_c != null ? m.inside_temp_c.toFixed(1) : "—") + '<span class="u">℃</span>';
+    $("tWake").textContent = (m.wake_count ?? "—") + (m.final_mission ? " ⚡冲刺" : "");
+    $("tLight").textContent = m.light ?? "—";
+    $("tTask").textContent = m.task_total ? `${m.task_index}/${m.task_total}` : "—";
+    meter("mF", m.front_cm); meter("mL", m.left_cm); meter("mR", m.right_cm);
+    if (m.mode === "E-STOP") $("estopBtn").classList.add("latched");
+  } else if (m.type === "alert") {
+    log(`${m.level}: ${m.code}`, m.level);
+  } else if (m.type === "mode") {
+    log(`模式 → ${m.mode}（${m.reason}）`);
+    if (m.mode !== "E-STOP") $("estopBtn").classList.remove("latched");
+    document.querySelectorAll(".modeRow button[data-mode]").forEach(b =>
+      b.classList.toggle("active", b.dataset.mode === m.mode));
+  } else if (m.type === "task_state") {
+    log(`任务 ${m.name} ${m.state} ${m.index}/${m.total}`);
+  }
+}
+
+// ================= 驾驶输入（键盘 + 摇杆，10Hz 发送） =================
+let throttle = 0, turn = 0, padT = 0, padU = 0;
+const keys = {};
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); estop(true); return; }
+  keys[e.key.toLowerCase()] = true;
+});
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+const pad = $("pad"), knob = $("knob");
+let dragging = false;
+function padMove(ev) {
+  const r = pad.getBoundingClientRect();
+  let x = (ev.clientX - r.left - r.width / 2) / (r.width / 2);
+  let y = (ev.clientY - r.top - r.height / 2) / (r.height / 2);
+  const len = Math.hypot(x, y); if (len > 1) { x /= len; y /= len; }
+  padU = +x.toFixed(2); padT = +(-y).toFixed(2);
+  knob.style.left = (r.width / 2 - 22 + x * (r.width / 2 - 26)) + "px";
+  knob.style.top  = (r.height / 2 - 22 + y * (r.height / 2 - 26)) + "px";
+}
+pad.addEventListener("pointerdown", ev => { dragging = true; pad.setPointerCapture(ev.pointerId); padMove(ev); });
+pad.addEventListener("pointermove", ev => { if (dragging) padMove(ev); });
+function padEnd() { dragging = false; padT = padU = 0; knob.style.left = "53px"; knob.style.top = "53px"; }
+pad.addEventListener("pointerup", padEnd);
+pad.addEventListener("pointercancel", padEnd);
+
+setInterval(() => {                       // 10Hz 驾驶指令
+  const kT = (keys["w"] ? 1 : 0) + (keys["s"] ? -1 : 0);
+  const kU = (keys["d"] ? 1 : 0) + (keys["a"] ? -1 : 0);
+  throttle = dragging ? padT : kT * 0.7;
+  turn     = dragging ? padU : kU * 0.6;
+  $("dT").textContent = throttle.toFixed(2);
+  $("dU").textContent = turn.toFixed(2);
+  if (connected && (throttle || turn || keys._wasDriving)) {
+    send({ type: "drive", throttle, turn });
+    keys._wasDriving = !!(throttle || turn);   // 归零帧也发一次，确保停车
+  }
+}, 100);
+setInterval(() => send({ type: "heartbeat", ts: Date.now() }), 500);   // 心跳
+
+// ================= 按钮 =================
+document.querySelectorAll(".modeRow button[data-mode]").forEach(b =>
+  b.onclick = () => send({ type: "set_mode", mode: b.dataset.mode }));
+$("sleepBtn").onclick = () => { if (confirm("进入深度休眠演示？（定时/光照唤醒）")) send({ type: "sleep_now" }); };
+
+let estopOn = false;
+function estop(active) {
+  estopOn = active;
+  send({ type: "estop", active });
+  log(active ? "已发送 E-STOP！" : "E-STOP 已清除", active ? "ERROR" : undefined);
+}
+$("estopBtn").onclick = () => estop(!(estopOn && $("estopBtn").classList.contains("latched")));
+
+$("panoBtn").onclick   = () => send({ type: "task", name: "capture_panorama", step_deg: 30 });
+$("stereoBtn").onclick = () => send({ type: "task", name: "capture_stereo" });
+$("taskStopBtn").onclick = () => send({ type: "task", name: "stop" });
+$("panSlider").oninput = e => { $("panVal").textContent = e.target.value;
+                                send({ type: "pan", deg: +e.target.value }); };
+
+log("提示：先启动 vision/mock_rover.py 可无硬件试跑本控制台");
+</script>
+</body>
+</html>
