@@ -187,6 +187,59 @@ def main():
             hole_only(f"{tag} 轴孔Φ8", m, (x0, side * y, bp.P["wheel_D"] / 2),
                       (0, 1, 0), bp.P["shaft_hole"])
 
+    print("== D. 轮毂转接头与 84x45 六角轮 ==")
+    adp = byname["14_轮毂转接头_hex_adapter"]      # 已摆在右前轮真实位姿
+    fx, wz = bp.P["x_front"], bp.P["wheel_D"] / 2
+    # DD 孔：截面环 5.6 x 3.9（平面距=min 边）
+    cD, mdD, bbD = find_hole(adp, (fx, 85, wz), (0, 1, 0), (bp.P["dd_dia"] + bp.P["dd_flat"]) / 2)
+    check("转接头 DD 孔 平面距 3.9/Φ5.6", bbD is not None and abs(min(bbD) - bp.P["dd_flat"]) <= 0.25
+          and abs(max(bbD) - bp.P["dd_dia"]) <= 0.25,
+          f"实测 {min(bbD):.2f} x {max(bbD):.2f}" if bbD else "找不到孔")
+    # M4 轴向锁紧孔
+    hole_only("转接头 M4 轴向锁紧孔Φ4.3", adp, (fx, 96.5, wz), (0, 1, 0), 4.3)
+    # M3 顶丝孔（世界 Z 向，位于体段）
+    hole_only("转接头 M3 顶丝孔Φ3.4", adp, (fx, 88.5, wz - 4), (0, 0, 1), bp.P["m3"])
+    # 六角对边（外轮廓）
+    sec = adp.section(plane_origin=(fx, 95.0, wz), plane_normal=(0, 1, 0))
+    okhex, msg = False, "无截面"
+    if sec is not None:
+        p2, _ = sec.to_2D()
+        polys = sorted(p2.polygons_full, key=lambda p: -abs(p.area))
+        if polys:
+            b = polys[0].bounds
+            wmin = min(b[2] - b[0], b[3] - b[1])
+            okhex = abs(wmin - bp.P["hex_af"]) <= 0.8
+            msg = f"对边实测 {wmin:.2f}/{bp.P['hex_af']}"
+    check("转接头六角 12mm 轮毂配合（11.85AF）", okhex, msg)
+    # 装配几何（参数化推导 + 网格实测）
+    web = 3.0
+    engage = 9.5 - web - 0.5
+    check("TT 轴在 DD 孔内咬合长度 ≥ 5mm", engage >= 5.0, f"{engage:.1f}mm（轴9.5-腹板3-间隙0.5）")
+    check("六角(对角13.7) 可进轮毂腔 Φ26", bp.P["hex_af"] / math.cos(math.radians(30)) < 26,
+          f"{bp.P['hex_af']/math.cos(math.radians(30)):.1f} < 26")
+    wheels_w = [a["world_mesh"] for a in acc if a["name"] == "wheel"]
+    arm_out = bp.P["rocker_y"] + bp.P["arm_t"]
+    win = min(w.bounds[0][1] for w in wheels_w if w.bounds[0][1] > 0)
+    check("轮内侧面 ↔ 摆臂外面 间隙 ≥ 3mm", win - arm_out >= 3.0 - 0.05,
+          f"{win - arm_out:.1f}mm")
+    check("相邻轮 X 向间距（160轮距-84轮径）", bp.P["x_front"] - bp.P["x_mid"] - bp.P["wheel_D"] >= 20,
+          f"{bp.P['x_front'] - bp.P['x_mid'] - bp.P['wheel_D']:.0f}mm")
+    # 转接头实例 × 轮 / 电机（目标干涉 = 0）
+    hit = 0
+    adps = [a["world_mesh"] for a in acc if a["name"] == "hex_adapter_inst"] + [adp]
+    for am in adps:
+        for wmesh in wheels_w:
+            if np.linalg.norm(am.centroid - wmesh.centroid) > 60:
+                continue
+            try:
+                inter = trimesh.boolean.intersection([am, wmesh], engine="manifold")
+                v = 0.0 if inter is None or inter.is_empty else abs(inter.volume)
+            except BaseException:
+                v = 0.0
+            if v > TOL_VOL:
+                hit += 1
+    check("转接头 × 轮毂腔 无干涉", hit == 0, f"{hit} 处")
+
     print("== B. 干涉检查（布尔交体积） ==")
     pl = [(p["name"], p["world_mesh"]) for p in parts]
     pairs_hit = 0

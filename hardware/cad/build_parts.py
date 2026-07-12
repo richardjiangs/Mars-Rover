@@ -28,18 +28,27 @@ P = dict(
     # 主舱（外廓 190x149 来自总体设计.jpg；高度按图上"9cm"取 90——
     # 旧 主舱.stl 的 75 装不下楼层叠高 5+25+4+35+4+主控板15=88，是错误值）
     cab_L=190.0, cab_W=149.0, cab_H=90.0, wall=4.0, floor=5.0,
-    cab_z0=45.0,                      # 主舱底板离地（离地间隙）
+    cab_z0=53.0,                      # 主舱底板离地（84 轮下电机顶=51，留 2mm 间隙）
     post=8.0,                         # 角柱边长
-    # 车轮 / 电机（Footprint: TT 70x20x20，轮 Φ65x26）
-    wheel_D=65.0, wheel_T=26.0,
-    motor_L=70.0, motor_W=20.0, motor_H=20.0,
-    motor_hole_pitch=17.6,            # TT 两个 M3 贯穿孔间距
-    motor_hole_from_shaft=11.4,       # 轴心到近端安装孔
-    shaft_hole=8.0,                   # 摆臂上的轴过孔
+    # 车轮：用户实物 84x45，12mm 内六角轮毂，中心孔 Φ4（RC 通用标准）
+    wheel_D=84.0, wheel_T=45.0,
+    # 电机：1:48 黄色单轴 TT，官方外形 70x22x18（Adafruit 3777 数据）
+    # 安装 = 2 颗 M3 长螺丝顺轴向贯穿车体（官方 L 支架即此接法）
+    motor_L=70.0, motor_W=22.0, motor_H=18.0,
+    motor_hole_pitch=17.6,            # 两孔间距（TT 图纸通用值）
+    motor_hole_from_shaft=11.4,       # 轴心到近端安装孔（通用值；槽孔 ±4 兜公差）
+    m3_slot_len=8.0,                  # M3 安装腰形槽长（原 6 → 8，覆盖孔位不确定性）
+    shaft_hole=8.0,                   # 摆臂轴过孔（轴 Φ5.4 双D面/平面距 3.7）
+    # 轮毂转接头（TT 双D轴 → 12mm 六角）
+    dd_dia=5.6, dd_flat=3.9,          # DD 孔打印尺寸（轴 5.4/3.7 + 打印公差）
+    hex_af=11.85,                     # 六角对边（轮毂槽 12.0 - 0.15 配合）
+    adp_nose_d=20.0, adp_nose_l=3.0,  # 入臂沉台的法兰鼻
+    adp_body_d=18.0, adp_body_l=5.0,
+    adp_hex_l=7.0,
     # 悬挂几何（总体设计.jpg：轮距 160、摇臂 220-260、转向架 140-170）
     x_front=160.0, x_mid=0.0, x_rear=-160.0,
     hingeA=(40.0, 67.5),              # 主铰链 A (x, z)
-    hingeB=(-75.0, 55.0),             # 二级铰链 B (x, z)
+    hingeB=(-75.0, 58.0),             # 二级铰链 B (x, z)（84 轮/22 宽电机下与摇臂梁保持间隙）
     arm_t=8.0, arm_h=20.0,            # 摆臂厚 / 梁高
     rocker_y=79.5,                    # 右摇臂内侧面 y（左侧镜像）
     bogie_gap=0.8,                    # 摇臂-转向架间 PTFE 垫片厚
@@ -60,7 +69,7 @@ P = dict(
     sg90=(23.4, 12.8, 24.0),          # SG90 顶部插槽
     # 平衡差动杆
     bar_L=200.0, bar_W=16.0, bar_t=8.0,
-    horn_top_z=146.0,                 # 摇臂立柱顶面 = 顶盖(135+3)+枢轴凸台(8)
+    horn_top_z=154.0,                 # 摇臂立柱顶面 = 顶盖(53+90+3)+枢轴凸台(8)
     # 超声波（HC-SR04 45x20x18，探头 Φ16 间距 26）
     sonar_hole=16.4, sonar_pitch=26.0, sonar_wing_deg=32.0,
     # 开关（Footprint：25x15x65，横装+护翼比拨杆长 5mm）
@@ -269,8 +278,12 @@ def motor_station(x, z, y_inner, body_dir, side):
     # （原扎带槽距轴孔仅 6mm，会与 M3 槽/轴孔在 X 向串通成 18mm 大槽掏空腹板）
     for k in (1, 2):
         dx = body_dir * (P["motor_hole_from_shaft"] + (k - 1) * P["motor_hole_pitch"])
-        adds.append(cyl(6.5, t, (x + dx, yc, z), axis="y"))
-        cuts.append(slot(P["m3"] + 0.2, P["m3_slot"], t + 6, (x + dx, yc, z),
+        adds.append(cyl(7.5, t, (x + dx, yc, z), axis="y"))
+        cuts.append(slot(P["m3"] + 0.2, P["m3_slot_len"], t + 6, (x + dx, yc, z),
+                         axis="y", along="x"))
+        # 外侧沉孔（槽形，深 3）：M3x30 贯穿 摆臂(8-3) + 电机体(22) + 螺母，长度正好
+        y_cb = yc + side * (t / 2 - 1.5 + 0.01)
+        cuts.append(slot(7.0, P["m3_slot_len"] + 3.0, 3.0, (x + dx, y_cb, z),
                          axis="y", along="x"))
     return adds, cuts
 
@@ -488,35 +501,93 @@ def sonar_bracket():
                 note="前直视+左右 32° 三站位，Φ16.4 泪滴孔，安装耳 M3 对准前墙")
 
 
+
+
+# ==================== 零件：轮毂转接头（TT轴→12mm六角） ====================
+def hex_adapter():
+    """打印姿态建模（轴向 = +Z，鼻端朝下）：
+    [鼻 Φ20x3 → 入摆臂 Φ24 沉台] [体 Φ18x5] [六角 11.85AF x7 → 轮毂]
+    - DD 孔（Φ5.6/平面距 3.9）深 8.5：套 TT 双D轴，平面传扭
+    - 径向 M3 顶丝 + 六角螺母侧槽：顶住轴平面，防轴向脱出（防轮子掉）
+    - 轴向 Φ4.3 孔 + M4 螺母横槽：M4x20 穿轮心 Φ4 孔锁入，把轮毂压在六角肩上
+    """
+    nl, bl, hl = P["adp_nose_l"], P["adp_body_l"], P["adp_hex_l"]
+    total = nl + bl + hl
+    body = [cyl(P["adp_nose_d"] / 2, nl, (0, 0, nl / 2)),
+            cyl(P["adp_body_d"] / 2, bl, (0, 0, nl + bl / 2))]
+    hx = trimesh.creation.cylinder(radius=P["hex_af"] / math.sqrt(3), height=hl, sections=6)
+    hx.apply_translation((0, 0, nl + bl + hl / 2))
+    body.append(hx)
+    solid = union(body)
+    cuts = []
+    # DD 孔：圆 Φ5.6 与两平面 3.9 相交（从鼻端向上 8.5 深）
+    dd = cut(cyl(P["dd_dia"] / 2, 8.5 + 0.1, (0, 0, 8.5 / 2)),
+             [box(8, 8, 12, (0,  P["dd_flat"] / 2 + 4, 8.5 / 2)),
+              box(8, 8, 12, (0, -P["dd_flat"] / 2 - 4, 8.5 / 2))])
+    cuts.append(dd)
+    # 轴向 M4 锁紧孔（从六角端面到螺母槽）
+    cuts.append(cyl(4.3 / 2, total, (0, 0, total - 3.0)))
+    # M4 螺母横槽（对边 7.2、厚 3.4，从一侧滑入；离六角端面 4.5）
+    zn = total - 4.5 - 3.4 / 2 + 3.4 / 2  # 槽中心
+    cuts.append(box(7.2, 20.0, 3.4, (0, 5.0, total - 4.5)))
+    # 径向 M3 顶丝孔（顶到 DD 孔平面，防轴向脱出）+ M3 螺母侧槽（体段）
+    zset = nl + bl / 2
+    cuts.append(cyl(P["m3"] / 2, 20, (0, 5, zset), axis="y"))
+    cuts.append(box(5.6, 6.0, 2.6, (0, 6.2, zset)))     # M3 螺母槽（对边5.5+0.1）
+    solid = cut(solid, cuts)
+    # 世界位姿 = 右前轮真实装配位（鼻端入摆臂沉台，留 0.5 间隙）——参与装配干涉校验
+    yr_out = P["rocker_y"] + P["arm_t"]
+    w = tra((P["x_front"], yr_out - 5.0 + 0.5, P["wheel_D"] / 2)) @ rot(-math.pi / 2, (1, 0, 0))
+    return dict(name="14_轮毂转接头_hex_adapter", mesh=solid, world=w,
+                color=(210, 140, 200),
+                note="DD孔Φ5.6/3.9 深8.5 | 12mm六角(11.85AF) | M4轴向锁轮+M3顶丝锁轴｜打印6个")
+
+
 # ============================ 装配配件（非打印，仅预览） ============================
 def accessories():
     acc = []
     wz = P["wheel_D"] / 2
+    adp_len = P["adp_nose_l"] + P["adp_body_l"] + P["adp_hex_l"]
 
-    def wheel(x, y):
-        m = cyl(P["wheel_D"] / 2, P["wheel_T"], (x, y, wz), axis="y")
+    def wheel(x, y_arm_out, side):
+        """84x45 轮（中心留 Φ26 轮毂腔容纳六角）；内侧面 = 臂外面 + 鼻隙0.5+鼻3+体5-5(入沉台) = +3.5"""
+        y_in = y_arm_out + 3.5 * 1.0
+        yc = y_in + side * 0 + P["wheel_T"] / 2 if side > 0 else -(abs(y_arm_out) + 3.5 + P["wheel_T"] / 2)
+        yc = side * (abs(y_arm_out) + 3.5 + P["wheel_T"] / 2)
+        m = cut(cyl(P["wheel_D"] / 2, P["wheel_T"], (x, yc, wz), axis="y"),
+                [cyl(13.0, P["wheel_T"] + 4, (x, yc, wz), axis="y")])
         return dict(name="wheel", mesh=m, world=np.eye(4), color=(60, 60, 65))
 
-    def motor(x, y_face, body_dir, side):
-        yc = y_face - side * P["motor_W"] / 2
+    def motor(x, y_face_in, body_dir, side):
+        """体 70x22x18 贴摆臂内侧面；轴 Φ5.4 从站位穿出"""
+        yc = side * (abs(y_face_in) - P["motor_W"] / 2)
         m = box(P["motor_L"], P["motor_W"], P["motor_H"],
                 (x + body_dir * (P["motor_L"] / 2 - 11.4), yc, wz))
-        sh = cyl(2.7, 34, (x, yc + side * 17, wz), axis="y")
+        sh = cyl(1.8, 30, (x, yc + side * (P["motor_W"] / 2 + 4), wz), axis="y")
         return dict(name="motor", mesh=union([m, sh]), world=np.eye(4),
                     color=(250, 220, 60))
+
+    def adapter_inst(x, y_arm_out, side):
+        """转接头实例：+Z 轴转到车轮轴向，鼻端入摆臂外侧沉台（留 0.5 间隙）"""
+        m = ADAPTER_MESH.copy()
+        m.apply_transform(rot(-side * math.pi / 2, (1, 0, 0)))   # +Z -> ±Y
+        y_nose = side * (abs(y_arm_out) - 5.0 + 0.5)             # 沉台底(腹板外面)+0.5
+        m.apply_translation((x, y_nose, wz))
+        return dict(name="hex_adapter_inst", mesh=m, world=np.eye(4),
+                    color=(210, 140, 200))
 
     y_rocker_in = P["rocker_y"]
     y_bogie_in = P["rocker_y"] + P["arm_t"] + P["bogie_gap"]
     for s in (1, -1):
-        # 前轮在摇臂外侧，中后轮在转向架外侧
-        yr_out = s * (y_rocker_in + P["arm_t"])
-        yb_out = s * (y_bogie_in + P["arm_t"])
-        acc.append(wheel(P["x_front"], yr_out + s * P["wheel_T"] / 2 + s * 1))
-        acc.append(wheel(P["x_mid"], yb_out + s * P["wheel_T"] / 2 + s * 1))
-        acc.append(wheel(P["x_rear"], yb_out + s * P["wheel_T"] / 2 + s * 1))
-        acc.append(motor(P["x_front"], s * y_rocker_in, -1, s))
-        acc.append(motor(P["x_mid"], s * y_bogie_in, +1, s))
-        acc.append(motor(P["x_rear"], s * y_bogie_in, +1, s))
+        yr_out = y_rocker_in + P["arm_t"]
+        yb_out = y_bogie_in + P["arm_t"]
+        for x, y_out, y_in, bd in ((P["x_front"], yr_out, y_rocker_in, -1),
+                                   (P["x_mid"], yb_out, y_bogie_in, +1),
+                                   (P["x_rear"], yb_out, y_bogie_in, +1)):
+            acc.append(wheel(x, y_out, s))
+            acc.append(motor(x, s * y_in, bd, s))
+            if not (s == 1 and x == P["x_front"]):   # 右前位由零件本体占据
+                acc.append(adapter_inst(x, y_out, s))
     # 舱内器件
     z0 = P["cab_z0"] + P["floor"]
     acc.append(dict(name="battery", mesh=box(75, 40, 20, (0, 0, z0 + 10 + 5)),
@@ -573,7 +644,11 @@ PRINT_ORIENT = {   # 每个零件的打印姿态（把世界系建模件转到 Z
 }
 
 
+ADAPTER_MESH = None
+
+
 def build_all():
+    global ADAPTER_MESH
     parts = [cabin(), lid(), deck("F1"), deck("F2")]
     rr = rocker_R()
     parts.append(rr)
@@ -583,7 +658,9 @@ def build_all():
     parts.append(br)
     bl = dict(br, name="08_左转向架_bogie_L", mesh=mirror_y(br["mesh"]))
     parts.append(bl)
-    parts += [balance_bar(), mast(), cam_bracket(), switch_guard(), sonar_bracket()]
+    adp = hex_adapter()
+    ADAPTER_MESH = adp["mesh"]
+    parts += [balance_bar(), mast(), cam_bracket(), switch_guard(), sonar_bracket(), adp]
     return parts
 
 

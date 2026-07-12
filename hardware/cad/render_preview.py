@@ -144,6 +144,7 @@ def main():
         "11_相机支架_cam_bracket": (0, 0, 170),
         "12_开关护架_switch_guard": (-60, 0, 0),
         "13_超声波支架_sonar_bracket": (60, 0, 0),
+        "14_轮毂转接头_hex_adapter": (60, 40, 0),
     }
     ms_ex = []
     for p in parts:
@@ -152,7 +153,7 @@ def main():
         m.apply_translation(explode.get(p["name"], (0, 0, 0)))
         ms_ex.append((m, p["color"], 1.0))
     render(ms_ex, DRAW / "assembly_0_爆炸图.png", 18, -55,
-           title=L("爆炸装配图 — 13 个打印件的装配关系", "exploded view"), ground=False)
+           title=L("爆炸装配图 — 14 种打印件的装配关系（转接头 x6）", "exploded view"), ground=False)
 
     # ---------- 单件图（打印姿态） ----------
     for p in parts:
@@ -197,6 +198,21 @@ def main():
               f"{'✓' if ok else '✗✗ 超床!'}")
         render([(m, c, 1.0) for m, c in placed], DRAW / f"plate_{pname}.png",
                55, -75, title=f"{pname}  {ext[0]:.0f} x {ext[1]:.0f} mm", ground=False)
+
+    # PLATE_7：轮毂转接头 x6（3x2 网格，鼻端朝下免支撑）
+    adp = bynames["14_轮毂转接头_hex_adapter"]
+    grid = []
+    for i in range(6):
+        m = adp["mesh_print"].copy()
+        m.apply_translation((-m.bounds[0][0] + (i % 3) * 28.0,
+                             -m.bounds[0][1] + (i // 3) * 28.0, -m.bounds[0][2]))
+        grid.append((m, adp["color"]))
+    plate7 = trimesh.util.concatenate([m for m, _ in grid])
+    e7 = plate7.bounding_box.extents
+    plate7.export(PLATES / "PLATE_7_轮毂转接头x6.stl")
+    print(f"  {'PLATE_7_轮毂转接头x6':26s} {e7[0]:6.1f} x {e7[1]:6.1f} x {e7[2]:5.1f}  ✓")
+    render([(m, c, 1.0) for m, c in grid], DRAW / "plate_PLATE_7_轮毂转接头x6.png",
+           55, -75, title=f"PLATE_7_轮毂转接头x6  {e7[0]:.0f} x {e7[1]:.0f} mm", ground=False)
 
 
 if __name__ == "__main__":
